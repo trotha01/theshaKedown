@@ -1,0 +1,117 @@
+<html>
+<head>
+<title>Music Hack Day MIT: Looper</title>
+<style type="text/css">
+</style>
+<script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.6.2/jquery.min.js"></script>
+<script type="text/javascript">
+
+var context;
+var soundBuffer;
+var FPS = 30;
+var beats = [];
+
+function initSound() {
+    var request = new XMLHttpRequest();
+    var url = "genius.mp3";
+    request.open('GET', url, true);
+    request.responseType = 'arraybuffer';
+    request.onload = function() {
+        context.decodeAudioData(request.response, function(buffer) {
+            soundBuffer = buffer;
+        });
+    }
+    request.send();
+}
+
+function playSound(beats, beat) {
+    var start = beats[beat].start;
+    var duration = beats[beat].duration;
+    console.log(beat);
+    console.log(start);
+    console.log(duration);
+    source = context.createBufferSource();
+    source.buffer = soundBuffer;
+    source.connect(context.destination);
+    source.noteGrainOn(0, start, duration);
+}
+
+function getBeats(beats) {
+    $.getJSON("analysis.json", 
+        function(analysis) {
+            for (i in analysis.beats) {
+                beats.push({start: analysis.beats[i].start, duration: analysis.beats[i].duration});
+            }
+            runLoop(beats);
+        }
+    );
+}
+
+$(document).ready(function() {
+    getBeats(beats);
+    context = new webkitAudioContext();
+    initSound();
+});
+
+</script>
+</head>
+<body>
+<canvas id="canvas" width="700" height="700">
+HTML5 canvas not supported.
+</canvas>
+
+<script type="text/javascript">
+
+var length = 30;
+
+function onClick(e) {
+    var offset = $("#canvas").offset();
+    var x = e.clientX - offset.top;
+    var y = e.clientY - offset.left;
+    console.log(x + " " + y);
+    var idx = Math.floor(x / length);
+    var idy = Math.floor(y / length);
+    var id = (idy * 10) + idx;
+    console.log(id);
+    playSound(beats, id);
+}
+
+var canvas = document.getElementById("canvas");
+var canvasContext = canvas.getContext("2d");
+canvas.addEventListener("click", onClick, false);
+
+function update() {
+    
+}
+
+function draw() {
+    var squaresPerRow = 0;
+    var row = 0;
+    for (var i = 0; i < beats.length; i++) {
+        if (i % 3 == 0) {
+            canvasContext.fillStyle = "blue";
+        } else if (i % 3 == 1) {
+            canvasContext.fillStyle = "black";
+        } else if (i % 3 == 2) {
+            canvasContext.fillStyle = "red";
+        }
+        if (squaresPerRow == 40) {
+            row++;
+            squaresPerRow = 0;
+        }
+        canvasContext.fillRect(squaresPerRow * length, row * length, length, length);
+        canvasContext.stroke();
+        squaresPerRow++;
+    } 
+}
+
+function runLoop(beats) {
+    var gameLoop;
+    draw(beats);
+    update(beats);
+    gameLoop = setTimeout(function() {runLoop(beats)}, 1000 / FPS);
+}
+</script>
+
+</body>
+</html>
