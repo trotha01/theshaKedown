@@ -1,0 +1,652 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>theshaKedown</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<style type="text/css">
+html{
+    height:100%;
+}
+body{
+    background-color:black;
+    height:100%;
+}
+canvas{
+    border:1px solid white;
+    background-color:#006363;
+    -moz-box-shadow:3px 3px 5px 6px white;
+    -webkit-box-shadow:3px 3px 5px 6px white;
+    box-shadow:3px 3px 5px 6px white;
+}
+#loadingScreen{
+    background-color:gray;
+    display:block;
+    float:left;
+    width:100%;
+    height:100%;
+}
+#mixButton{
+    position:absolute;
+    left:520px;
+}
+#help{
+    color:white;
+}
+</style>
+<script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.6.2/jquery.min.js"></script>
+<script type="text/javascript" src="http://www.html5canvastutorials.com/libraries/kinetic-v4.0.5.js"></script>
+<script type="text/javascript" src="tetris.js"></script>
+<script type="text/javascript">
+
+  var _gaq = _gaq || [];
+  _gaq.push(['_setAccount', 'UA-36258407-1']);
+  _gaq.push(['_trackPageview']);
+
+  (function() {
+    var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+    ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+  })();
+    
+</script>
+</head>
+
+<body>
+
+<div id="loadingScreen">LOADING</div>
+
+<input type="button" id="songButton" onclick="playSong()" value="Play Song">
+<input type="button" id="mixButton" onclick="playUserMix()" value="Play it!">
+<div id="container"></div>
+<input type="button" id="colorSwap" onclick="swapColors()" value="Color Swap">
+<input type="button" id="gridStyle" onclick="gridStyle()" value="Grid Style">
+<input type="button" id="tetris" onclick="startTetris()" value="TETRIS!">
+
+<div id="help">
+<br/><br/><br/>
+    FREE STYLE: <br/>
+        Click and drag a beat from the song to the right half.<br/>
+        Click on this beat to add it to your mis.<br/>
+        Play your mix!<br/>
+        <br/>
+
+    GRID STYLE: <br/>
+        Click on a beat to select.<br/>
+        Click on a cell in the grid.<br/>
+        Play your mix!<br/>
+        <br/>
+
+    COLOR SWAP:<br/>
+        In case these are to Christmassy for you.<br/>
+        <br/>
+    
+    TETRIS:<br/>
+        Play with random beats from the song.<br/>
+        Tetris in progress.<br/>
+        <br/>
+
+    CHROME Required<br/>
+    <br/>
+    TIME for song to load required<br/>
+    <br/>
+    
+</div>
+
+<script type="text/javascript">
+var canvasHeight = 500;
+var canvasWidth = 1000;
+var tileLen = 20;
+var gridColumnNum = 8;
+var gridRowNum = 9;
+
+var color1 = 'red';
+var color2 = '#00CC00';
+var color3 = 'white';
+var color4 = '#38B2CE';
+var stroke = 'silver';
+var curveColor = 'green';
+var backgroundColor = '#006363';
+var shadowColor = 'silver';
+
+var soundBuffer;
+var FPS = 30;
+var beats = [];
+var stage;
+
+var currentSongTiles;
+var userMixTiles;
+var userMixCurves;
+var userDiscardTiles;
+var tetrisBlock;
+
+var currentId = -1;
+var currentColor = null;
+
+var songIsPlaying = false;
+var isGridStyle = false;
+var isTetrisStyle = false;
+var isChristmas = true;
+
+var isChrome = navigator.userAgent.toLowerCase().indexOf('chrome') > -1;
+
+$(document).ready(function() {
+    var layer = initMixStage();
+    getBeats(beats, layer);
+    context = new webkitAudioContext();
+    initSound();
+    document.onkeypress = function(event){moveTetrisBlock(event);};
+    //$('canvas').onkeypress = function(e){moveTetrisBlock(e);};
+});
+
+window.requestAnimFrame = (function(callback) {
+    return window.requestAnimationFrame ||
+    window.webkitRequestAnimationFrame ||
+    window.mozRequestAnimationFrame ||
+    window.oRequestAnimationFrame ||
+    window.msRequestAnimationFrame ||
+    function(callback) {
+        window.setTimeout(callback, 1000 / 60);
+    };
+})();
+
+///////////////////////////////////// CANVAS Building/////////////////////////////////////////////
+function initMixStage(){
+    layer = initKStage();
+    layer.add(midline());
+    
+    currentSongTiles = new Kinetic.Group({draggable:false});
+    userMixTiles = new Kinetic.Group({draggable:true});
+    userMixCurves = new Kinetic.Group({draggable:true, name:'curves'});
+    userDiscardTiles = new Kinetic.Group({draggable:false});
+    userMixTiles.add(userMixCurves);
+    layer.add(currentSongTiles);
+    layer.add(userMixTiles);
+    layer.add(userDiscardTiles);
+    //layer.on('keypress', function(){console.log("layer pressed");});
+    return layer;
+}
+
+function initKStage(){
+    stage = new Kinetic.Stage({
+        container: 'container',
+        width: canvasWidth,
+        height: canvasHeight
+    });
+    layer = new Kinetic.Layer();
+
+    //newSprite.off('draggableChange.kinetic');
+    //newSprite.off('idChange.kinetic');
+    //newSprite.off('nameChange.kinetic');
+    //newSprite.setListening(false);
+
+    return layer;
+}
+
+function midline(){
+    var line = new Kinetic.Line({
+        points:[canvasWidth/2,0,canvasWidth/2,canvasHeight],
+        stroke: "white",
+        strokeWidth: 2,
+    });
+    return line;
+}
+
+function KRectangle(userX,userY,userHeight,userWidth,color,userId){
+    var rect = new Kinetic.Rect({
+        id: userId,
+        x: userX,
+        y: userY,
+        width:userWidth,
+        height: userHeight,
+        fill: color,
+        stroke: stroke,
+        strokeWidth: 3,
+        shadow: {
+            color:shadowColor,
+            blur:7,
+            offset: [3, 3],
+            alpha: 0.5
+        },
+        draggable:true
+    });
+    return rect;
+}
+
+function KCurveShape(xStart, yStart, xControl1, yControl1, xEnd, yEnd, color){
+    var curve = new Kinetic.Shape({
+        drawFunc: function(context) {
+            context.beginPath();
+            context.moveTo(xStart, yStart);
+            context.quadraticCurveTo(xControl1, yControl1, xEnd, yEnd);
+            //context.lineTo(tile.getX(), tile.getY());
+            this.stroke(context);
+        },
+        stroke: color,
+        strokeWidth: 4
+    });
+    return curve
+}
+function buildSongTable(beats, layer) {
+    var squaresPerRow = 0;
+    var row = 0;
+    var color;
+    console.log(beats.length);
+    for (var i = 0; i < beats.length; i++) {
+        if(i%4 == 0){
+            color = color1;
+        } else if (i%4 == 1){
+            color = color2;
+        } else if (i%4 == 2) {
+            color = color3;
+        } else {
+            color = color4;
+        }
+        if (squaresPerRow == 21) {
+            row++;
+            squaresPerRow = 0;
+        }
+        var rect = KRectangle(squaresPerRow*tileLen, row*tileLen, tileLen, tileLen, color, i);
+       /* rect.on('mouseover',function(){
+            this.setOpacity(0.5);
+            layer.draw();
+        });
+        rect.on('mouseout',function(){
+            this.setOpacity(1);
+            layer.draw();
+        });*/
+        rect.on('click', function(evt){
+            tileClick(evt, this);
+        });
+
+        currentSongTiles.add(rect);
+        squaresPerRow++;
+    }
+    stage.add(layer);
+}
+
+function tileClick(evt, tile){
+    tile.moveToTop();
+    //tile.setOpacity(.5);
+    playSound(beats,tile.getId());
+    if(!isGridStyle){
+        if(tile.getX() > canvasWidth/2){
+            addToMix(tile);
+        }
+        else {
+            tile.moveTo(userDiscardTiles);
+            userDiscardTiles.moveToTop();
+        }
+    }
+    else{
+        currentId = tile.getId();
+        currentColor = tile.getFill();
+    }
+
+}
+
+function addToMix(tile){
+    var children = userMixTiles.getChildren();
+    tile.moveTo(userMixTiles);
+    if(children.length == 1){
+        userMixTiles.setX(canvasWidth / 2 + 3);
+        userMixTiles.setY(3);
+        userMixTiles.moveToTop();
+        tile.moveToTop();
+        return;
+    }
+    userMixTiles.moveToTop();
+    tile.moveToTop();
+    
+    //add curve between tiles
+    var lastChild;
+    if(children.length == 2) lastChild = children[1];
+    else lastChild = children[children.length - 2];
+    //console.log(children.length);
+    //for(var i=0; i<children.length; i++){
+    //    console.log("all: "+children[i].getX() + " " + children[i].getY());
+    //}
+    //console.log("last: "+lastChild.getX() + " " + lastChild.getY());
+    //console.log("current: "+tile.getX()+" " +tile.getY());
+
+    var curveXStart = lastChild.getX() + tileLen / 2;
+    var curveYStart = lastChild.getY() + tileLen / 2;
+    var curveXEnd = tile.getX() + tileLen / 2;
+    var curveYEnd = tile.getY() + tileLen / 2
+    var curve = KCurveShape(curveXStart, curveYStart, tile.getX(), lastChild.getY(), curveXEnd, curveYEnd, curveColor);
+   /* var curve = new Kinetic.Shape({
+        drawFunc: function(context) {
+            context.beginPath();
+            context.moveTo(lastChild.getX() + tileLen/2, lastChild.getY() + tileLen/2);
+            context.quadraticCurveTo(tile.getX(), lastChild.getY(), tile.getX()+tileLen/2, tile.getY()+tileLen/2);
+            //context.lineTo(tile.getX(), tile.getY());
+            this.stroke(context);
+        },
+        stroke: 'green',
+        strokeWidth: 4
+    });*/
+    userMixCurves.add(curve);
+    curve.moveToBottom();
+}
+
+///////////////////////////////////// SOUND /////////////////////////////////////////////
+function initSound() {
+    var request = new XMLHttpRequest();
+    var url = "audio.mp3";
+    request.open('GET', url, true);
+    request.responseType = 'arraybuffer';
+    request.onload = function() {
+        context.decodeAudioData(request.response, function(buffer) {
+            soundBuffer = buffer;
+        });
+    }
+    request.send();
+}
+
+function removeLoadingScreen() {
+    document.getElementById("loadingScreen").style.display="none";
+}
+
+function playSound(beats, beat) {
+    if(beat < 0) return;
+    //console.log(" beat: " + beat);
+    console.log(beats[beat]);
+    var start = beats[beat].start;
+    var duration = beats[beat].duration;
+    if(isChrome){ 
+        source = context.createBufferSource();
+        source.buffer = soundBuffer;
+        source.connect(context.destination);
+        source.noteGrainOn(0, start, duration);
+    }
+}
+
+function getBeats(beats, layer) {
+    $.getJSON("songAnalysis.json", 
+        function(analysis) {
+            for (i in analysis.beats) {
+                beats.push({start: analysis.beats[i].start, duration: analysis.beats[i].duration});
+            }
+            console.log("got beats");
+            setTimeout(function(){buildSongTable(beats, layer);},0);
+            removeLoadingScreen();
+        }
+    );
+}
+
+///////////////////////////////////// PLAY / PAUSE /////////////////////////////////////////////
+function play(beats,tiles,current)
+{
+    //reset previous opacity
+    if(current > 1){
+        tiles[current-1].setOpacity(1);
+        layer.draw();
+    }
+    //stop at end or at pause
+    if(current == tiles.length || !songIsPlaying){
+        songIsPlaying = false;
+        pause('mix');
+        pause('song');
+        return;
+    }
+    
+    //set current opacity
+    tiles[current].setOpacity(.5);
+    layer.draw();
+
+    var id = tiles[current].getId();
+    if(id != -1)
+        playSound(beats,id);
+    else id = 1;
+    current +=1;
+    setTimeout(function() {play(beats,tiles,current)}, beats[id].duration*1000);
+}
+
+function playUserMix(){
+    var children = userMixTiles.getChildren();
+    songIsPlaying = true;
+    document.getElementById("mixButton").value="Pause";
+    document.getElementById("mixButton").onclick=function(){pause('mix');};
+    if(!isGridStyle){
+        playSongBeats(beats, children, 1);
+    }else{
+        var tiles = [];
+        var curDuration
+        var index;
+        //for(var j = 0; j < gridRowNum; j++){
+        //    for(var i = 0; i < gridColumnNum; i++){
+        //        index = i + gridColumnNum*j;
+        //        tiles[i] = children[index];
+                //curDuration = beats[children[index].getId() - 1];
+                //if(!curDuration) curDuration = 0.5;
+                //else curDuration = curDuration.duration
+                //console.log(curDuration);
+                //setTimeout(function(){playSound(beats,children[index].getId());}, curDuration*1000);
+         //   }
+         //   playSongBeats(beats, tiles, 1);
+         playSongBeats(beats, children, 1);
+        //}
+    }
+}
+
+function playSongBeats(beats,tiles,current){
+    if(songIsPlaying){
+        var beat = tiles[current].getId();
+        console.log("beat: " + beat);
+        console.log("current: " + current);
+        if(beat != -1){
+            playSound(beats,beat);
+        }
+        current++;
+        setTimeout(function(){playSongBeats(beats, tiles, current)}, beats[current-1].duration*1000);
+    }
+}
+
+function playSong(){
+    songIsPlaying = true;
+    document.getElementById("songButton").value="Pause";
+    document.getElementById("songButton").onclick=function(){pause('song');};
+    var children = currentSongTiles.getChildren();
+    if(children.length !=0) {
+        if(playSongBeats(beats,children,0) == 'finished') //TODO: fix to be asynchronous
+            pause('song')
+    }
+}
+function pause(songOrMix){
+    songIsPlaying = false;
+    if(songOrMix == 'song'){
+        document.getElementById("songButton").value="Play Song";
+        document.getElementById("songButton").onclick=function(){playSong();};
+    } else {
+        document.getElementById("mixButton").value="Play It!";
+        document.getElementById("mixButton").onclick=function(){playUserMix();};
+    } 
+}
+
+///////////////////////////////////// ETC /////////////////////////////////////////////
+function swapColors(){
+    var songChildren = currentSongTiles.getChildren();
+    var mixChildren = userMixTiles.getChildren();
+    if (userMixTiles.get('.curves')[0]) var curveChildren = mixChildren[0].getChildren();
+    var color;
+    if(isChristmas){
+        isChristmas = false;
+        color1 = '#071871';
+        color2 = '#5A016D';
+        color3 = '#91A200';
+        color4 = '#38B2CE';
+        stroke = 'silver';
+        curveColor = 'silver';
+        backgroundColor = '#A67600';
+    }else{
+        isChristmas = true;
+        color1 = 'red';
+        color2 = '#00CC00';
+        color3 = 'white';
+        color4 = '#38B2CE';
+        stroke = 'silver';
+        curveColor = 'green';
+        backgroundColor = '#006363';
+    }
+        //recolor song tiles
+        for(var i = 0; i < songChildren.length; i++){
+            if(i%4 == 0) color=color1;
+            else if(i%4 == 1) color=color2;
+            else if(i%4 == 2) color=color3;
+            else color=color4;
+            songChildren[i].setFill(color);
+            songChildren[i].setStroke(stroke);
+        }
+        //recolor mix curves
+        if(userMixTiles.get('.curves')[0]){
+            for(var i = 0; i < curveChildren.length; i++){
+                curveChildren[i].setStroke(curveColor);
+            }
+        }
+        //recolor mix tiles
+        for(var i = 1; i < mixChildren.length; i++){
+            if(i%4 == 0) color=color1;
+            else if(i%4 == 1) color=color2;
+            else if(i%4 == 2) color=color3;
+            else color=color4;
+            mixChildren[i].setFill(color);
+            mixChildren[i].setStroke(stroke);
+        }
+        $('canvas')[0].style.backgroundColor=backgroundColor;
+    layer.draw();
+//var currentSongTiles;
+//var userMixTiles;
+//var userDiscardTiles;
+}
+
+function gridStyle(){
+    userMixTiles.removeChildren();
+    currentSongTiles.removeChildren();
+    buildSongTable(beats, layer);
+    //TODO swap colors if necessary
+    if(isGridStyle){
+        isGridStyle = false;
+        document.getElementById("gridStyle").value = "Grid Style";
+        layer.draw();
+        return;
+    }
+    isGridStyle = true;
+    document.getElementById("gridStyle").value = "Free Style";
+    var songChildren = currentSongTiles.getChildren();
+    for(var i = 0; i < songChildren.length; i++){
+        songChildren[i].setDraggable(false);
+    }
+    var rows = gridRowNum;
+    var columns = gridColumnNum;
+    var color = "#A67600";
+    for(var j = 1; j <= rows*2; j+=2){
+        for(var i = 1; i <= columns; i++){
+            var rect = KRectangle(i*tileLen*2 + canvasWidth / 2, j*tileLen*1.2, tileLen*2, tileLen*2, color, -1);
+            rect.setDraggable(false);
+            rect.on('click', function(evt){
+                this.setId(currentId);
+                if(currentColor != null) this.setFill(currentColor);
+            });
+            userMixTiles.add(rect);
+        }
+    }
+    layer.draw();
+/*    rect.on('mouseover',function(){
+        this.setOpacity(0.5);
+        layer.draw();
+    });
+    rect.on('mouseout',function(){
+        this.setOpacity(1);
+        layer.draw();
+    });*/
+}
+
+function startTetris(){
+    //TODO: clear right side tiles
+    isTetrisStyle = true;
+    tetrisBlock = Math.floor((Math.random()*7)+1);
+    songId = Math.floor(Math.random()*currentSongTiles.getChildren().length);
+    if(songId + 3 >= currentSongTiles.getChildren().length) songId -=4;
+    color = color1;
+    switch(tetrisBlock){
+        case 1: //I
+            tetrisBlock = TetrisI(canvasWidth * 3/4, 0, color, songId);
+            break;
+        case 2: //J
+            tetrisBlock = TetrisJ(canvasWidth * 3/4, 0, color, songId);
+            break;
+        case 3: //L
+            tetrisBlock = TetrisL(canvasWidth * 3/4, 0, color, songId);
+            break;
+        case 4: //O
+            tetrisBlock = TetrisO(canvasWidth * 3/4, 0, color, songId);
+            break;
+        case 5: //S
+            tetrisBlock = TetrisS(canvasWidth * 3/4, 0, color, songId);
+            break;
+        case 6: //Z
+            tetrisBlock = TetrisZ(canvasWidth * 3/4, 0, color, songId);
+            break;
+        case 7: //T
+            tetrisBlock = TetrisT(canvasWidth * 3/4, 0, color, songId);
+            break;
+        default:
+            break;
+    }
+    layer.add(tetrisBlock);
+    setTimeout(function(){
+        var date = new Date();
+        var time = date.getTime();
+        animate(time, tetrisBlock);
+    }, 1000);
+}
+
+function animate(lastTime, block){
+    //update
+    var date = new Date();
+    var time = date.getTime();
+    var timeDiff = time - lastTime;
+
+    //speed pixels/sec
+    var speedIncrementPerFrame = 12 * timeDiff/1000;
+
+    currentY = block.getY();
+    block.setY(currentY + speedIncrementPerFrame);
+
+    lastTime = time;
+    layer.draw();
+    requestAnimFrame(function(){
+        animate(lastTime, block);
+    });
+}
+
+function moveTetrisBlock(e){
+    console.log(e);
+    if(!isTetrisStyle) return;
+    console.log(e.KeyCode);
+    switch(e.KeyCode){
+        case 74: //j right
+            currentX = tetrisBlock.getX();
+            tetrisBlock.setX(currentX+25);
+            break;
+        case 70: //f left
+            currentX = tetrisBlock.getX();
+            tetrisBlock.setX(currentX-+25);
+            break;
+        case 75: //k rotate right
+            tetrisBlock.rotate(Math.PI);
+            break;
+        case 68: //d rotate left
+            tetrisBlock.rotate(0-Math.PI);
+            break;
+        case 32: //space move to bottom
+            break;
+        default: //speed down
+            break;
+    }
+}
+</script>
+
+
+
+</body>
+</html>
