@@ -1,0 +1,28 @@
+html{
+    height:100%;
+}
+body{
+    background-color:black;
+    height:100%;
+}
+canvas{
+    border:1px solid white;
+    background-color:#006363;
+    -moz-box-shadow:3px 3px 5px 6px white;
+    -webkit-box-shadow:3px 3px 5px 6px white;
+    box-shadow:3px 3px 5px 6px white;
+}
+#loadingScreen{
+    background-color:gray;
+    display:block;
+    float:left;
+    width:100%;
+    height:100%;
+}
+#mixButton{
+    position:absolute;
+    left:520px;
+}
+#help{
+    color:white;
+}
